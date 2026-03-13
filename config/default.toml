@@ -1,0 +1,96 @@
+# Call Notes AI Service - Default Configuration
+# Override any value via environment variables prefixed with APP_
+# e.g. APP_DATABASE_HOST=myhost overrides [database] host
+
+[app]
+env = "dev"
+name = "call-notes-ai-service"
+port = ":8080"
+ops_port = ":8081"
+shutdown_delay = 5
+shutdown_timeout = 30
+
+[database]
+host = "localhost"
+port = 5432
+user = "postgres"
+password = "postgres"
+name = "callnotes"
+ssl_mode = "disable"
+max_connections = 25
+min_connections = 5
+max_conn_lifetime = "1h"
+max_conn_idle_time = "30m"
+
+[database.retry]
+enabled = true
+max_retries = 5
+initial_backoff = "1s"
+max_backoff = "30s"
+
+[redis]
+addr = "localhost:6379"
+password = ""
+db = 0
+session_ttl = "30m"
+
+[kafka]
+brokers = ["localhost:9092"]
+group_id = "call-notes-ai"
+topics_audio = "call.audio.chunks"
+topics_transcript = "call.transcript.segments"
+topics_entities = "call.entities.extracted"
+topics_fields = "call.fields.mapped"
+topics_events = "call.session.events"
+
+[deepgram]
+api_key = ""
+ws_url = "wss://api.deepgram.com/v1/listen"
+model = "nova-2"
+language = "multi"
+smart_format = true
+diarize = true
+interim_results = true
+custom_vocabulary = ["paracetamol", "amoxicillin", "metformin", "hypertension", "diabetes"]
+
+[llm]
+provider = "bedrock"
+model = "anthropic.claude-3-5-haiku-20241022-v1:0"
+region = "ap-south-1"
+max_tokens = 1024
+temperature = 0.1
+timeout = "5s"
+fallback_provider = "openai"
+fallback_model = "gpt-4o-mini"
+
+[salesforce]
+instance_url = "https://test.salesforce.com"
+client_id = ""
+client_secret = ""
+username = ""
+password = ""
+api_version = "v59.0"
+object_name = "Case"
+timeout = "10s"
+max_retries = 3
+
+[logging]
+level = "info"
+format = "json"
+
+[metrics]
+enabled = true
+path = "/metrics"
+
+[rate_limit]
+enabled = true
+requests_per_second = 200.0
+burst_size = 400
+
+[tracing]
+enabled = false
+endpoint = "localhost:4317"
+service_name = "call-notes-ai-service"
+sample_rate = 1.0
+insecure = true
+batch_timeout = "5s"

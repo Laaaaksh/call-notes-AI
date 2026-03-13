@@ -1,0 +1,58 @@
+# Build artifacts
+bin/
+/api
+dist/
+build/
+
+# Go binaries & test
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+coverage.out
+coverage.html
+
+# Go workspace & vendor
+go.work
+go.work.sum
+vendor/
+
+# Generated mocks (regenerated via make mock)
+**/mock/mock_*.go
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Logs & temp
+*.log
+tmp/
+temp/
+
+# Docker data volumes (if mounted locally)
+.docker-data/
+
+# Profiling & debug
+*.pprof
+*.prof
+cpu.out
+mem.out
+
+# Air (hot reload) temp
+.air.toml.tmp
