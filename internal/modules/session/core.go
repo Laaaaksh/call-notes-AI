@@ -29,6 +29,7 @@ type ICore interface {
 	UpdateField(ctx context.Context, params *entities.UpdateFieldParams) error
 	ApplyAgentOverride(ctx context.Context, sessionID uuid.UUID, fieldName, agentValue string) error
 	SubmitSession(ctx context.Context, sessionID uuid.UUID, req *entities.SubmitRequest) (*entities.SubmitResponse, error)
+	PurgeSession(ctx context.Context, sessionID uuid.UUID) error
 }
 
 type Core struct {
@@ -198,4 +199,28 @@ func (c *Core) SubmitSession(ctx context.Context, sessionID uuid.UUID, req *enti
 		SessionID: sessionID.String(),
 		Status:    constants.SessionStatusSubmitted,
 	}, nil
+}
+
+func (c *Core) PurgeSession(ctx context.Context, sessionID uuid.UUID) error {
+	if c.redisClient != nil {
+		keys := []string{
+			"session:" + sessionID.String() + ":state",
+			"session:" + sessionID.String() + ":fields",
+			"session:" + sessionID.String() + ":transcript",
+		}
+		c.redisClient.Del(ctx, keys...)
+	}
+
+	if err := c.repo.PurgeSession(ctx, sessionID); err != nil {
+		logger.Ctx(ctx).Errorw("Session purge failed",
+			constants.LogKeyError, err,
+			constants.LogFieldSessionID, sessionID.String(),
+		)
+		return err
+	}
+
+	logger.Ctx(ctx).Infow("Session purged (DPDP right to erasure)",
+		constants.LogFieldSessionID, sessionID.String(),
+	)
+	return nil
 }

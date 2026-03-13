@@ -2,6 +2,7 @@ package extraction
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/call-notes-ai-service/internal/constants"
@@ -104,10 +105,69 @@ func buildReasoningPrompt(segment *entities.TranscriptSegment, existing []entiti
 	return sb.String()
 }
 
+type llmEntity struct {
+	Type            string `json:"type"`
+	RawValue        string `json:"raw_value"`
+	NormalizedValue string `json:"normalized_value"`
+	IsNegated       bool   `json:"is_negated"`
+}
+
 func parseReasoningResponse(response string) []entities.MedicalEntity {
-	// TODO: Parse JSON response from LLM into MedicalEntity slice
-	// For now, return empty — actual JSON parsing will be implemented
-	return nil
+	trimmed := strings.TrimSpace(response)
+
+	startIdx := strings.Index(trimmed, "[")
+	endIdx := strings.LastIndex(trimmed, "]")
+	if startIdx == -1 || endIdx == -1 || endIdx <= startIdx {
+		return nil
+	}
+	jsonStr := trimmed[startIdx : endIdx+1]
+
+	var parsed []llmEntity
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		return nil
+	}
+
+	result := make([]entities.MedicalEntity, 0, len(parsed))
+	for _, p := range parsed {
+		if p.RawValue == "" {
+			continue
+		}
+		entityType := mapLLMEntityType(p.Type)
+		if entityType == "" {
+			continue
+		}
+		result = append(result, entities.MedicalEntity{
+			Type:            entityType,
+			RawValue:        p.RawValue,
+			NormalizedValue: p.NormalizedValue,
+			Confidence:      0.75,
+			IsNegated:       p.IsNegated,
+		})
+	}
+	return result
+}
+
+func mapLLMEntityType(raw string) entities.EntityType {
+	typeMap := map[string]entities.EntityType{
+		"symptom":    entities.EntitySymptom,
+		"body_part":  entities.EntityBodyPart,
+		"condition":  entities.EntityCondition,
+		"medication": entities.EntityMedication,
+		"duration":   entities.EntityDuration,
+		"severity":   entities.EntitySeverity,
+		"age":        entities.EntityAge,
+		"name":       entities.EntityName,
+		"phone":      entities.EntityPhone,
+		"gender":     entities.EntityGender,
+		"allergy":    entities.EntityAllergy,
+		"follow_up":  entities.EntityFollowUp,
+		"icd10_code": entities.EntityICD10,
+	}
+	t, ok := typeMap[strings.ToLower(strings.TrimSpace(raw))]
+	if !ok {
+		return ""
+	}
+	return t
 }
 
 func isGroundedInTranscript(entity entities.MedicalEntity, transcript string) bool {

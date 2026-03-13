@@ -21,6 +21,7 @@ type IRepository interface {
 	GetLatestFields(ctx context.Context, sessionID uuid.UUID) ([]entities.ExtractedField, error)
 	GetFieldByName(ctx context.Context, sessionID uuid.UUID, fieldName string) (*entities.ExtractedField, error)
 	CreateOverride(ctx context.Context, override *entities.AgentOverride) error
+	PurgeSession(ctx context.Context, id uuid.UUID) error
 }
 
 type Repository struct {
@@ -64,6 +65,11 @@ const (
 	queryInsertOverride = `
 		INSERT INTO agent_overrides (id, session_id, field_name, ai_value, agent_value, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6)`
+
+	queryPurgeAuditLogs   = `DELETE FROM audit_logs WHERE session_id = $1`
+	queryPurgeOverrides   = `DELETE FROM agent_overrides WHERE session_id = $1`
+	queryPurgeFields      = `DELETE FROM extracted_fields WHERE session_id = $1`
+	queryPurgeSession     = `DELETE FROM call_sessions WHERE id = $1`
 )
 
 func (r *Repository) CreateSession(ctx context.Context, session *entities.CallSession) error {
@@ -137,4 +143,21 @@ func (r *Repository) CreateOverride(ctx context.Context, override *entities.Agen
 		override.ID, override.SessionID, override.FieldName, override.AIValue, override.AgentValue, override.CreatedAt,
 	)
 	return err
+}
+
+func (r *Repository) PurgeSession(ctx context.Context, id uuid.UUID) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	purgeQueries := []string{queryPurgeAuditLogs, queryPurgeOverrides, queryPurgeFields, queryPurgeSession}
+	for _, q := range purgeQueries {
+		if _, err := tx.Exec(ctx, q, id); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }

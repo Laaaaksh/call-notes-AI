@@ -12,7 +12,8 @@ var NewModule = func(ctx context.Context, llmClient llm.IClient) IModule {
 	if ExModule == nil {
 		ruleEngine := NewRuleEngine()
 		reasoner := NewLLMReasoner(llmClient)
-		core := NewCore(ctx, ruleEngine, reasoner)
+		piiRedactor := NewPIIRedactor()
+		core := NewCore(ctx, ruleEngine, reasoner, piiRedactor)
 		ExModule = &Module{Core: core}
 	}
 	return ExModule

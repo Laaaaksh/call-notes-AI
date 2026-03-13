@@ -31,6 +31,7 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router) {
 	r.Get(entities.RouteSessionsGet, h.GetSession)
 	r.Patch(entities.RouteSessionsFields, h.UpdateFields)
 	r.Post(entities.RouteSessionsSubmit, h.SubmitSession)
+	r.Delete(entities.RouteSessionsPurge, h.PurgeSession)
 }
 
 func (h *HTTPHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
@@ -108,6 +109,21 @@ func (h *HTTPHandler) SubmitSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *HTTPHandler) PurgeSession(w http.ResponseWriter, r *http.Request) {
+	sessionID, err := uuid.Parse(chi.URLParam(r, "sessionID"))
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, constants.ErrMsgInvalidSessionID)
+		return
+	}
+
+	if err := h.core.PurgeSession(r.Context(), sessionID); err != nil {
+		h.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, &StatusResponse{Status: "purged"})
 }
 
 func (h *HTTPHandler) writeJSON(w http.ResponseWriter, status int, data interface{}) {

@@ -15,17 +15,27 @@ type ICore interface {
 type Core struct {
 	ruleEngine  IRuleEngine
 	llmReasoner ILLMReasoner
+	piiRedactor IPIIRedactor
 }
 
 var _ ICore = (*Core)(nil)
 
-func NewCore(_ context.Context, ruleEngine IRuleEngine, llmReasoner ILLMReasoner) ICore {
-	return &Core{ruleEngine: ruleEngine, llmReasoner: llmReasoner}
+func NewCore(_ context.Context, ruleEngine IRuleEngine, llmReasoner ILLMReasoner, piiRedactor IPIIRedactor) ICore {
+	return &Core{ruleEngine: ruleEngine, llmReasoner: llmReasoner, piiRedactor: piiRedactor}
 }
 
 func (c *Core) ProcessSegment(ctx context.Context, segment *entities.TranscriptSegment) (*entities.ExtractionResult, error) {
 	if !segment.IsFinal {
 		return &entities.ExtractionResult{SessionID: segment.SessionID}, nil
+	}
+
+	redactedText, piiMatches := c.piiRedactor.Redact(segment)
+	if len(piiMatches) > 0 {
+		logger.Ctx(ctx).Infow(constants.LogMsgPIIRedacted,
+			constants.LogFieldSessionID, segment.SessionID,
+			"pii_types_found", len(piiMatches),
+		)
+		segment.Text = redactedText
 	}
 
 	// Layer 1: Rule engine extraction

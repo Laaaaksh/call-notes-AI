@@ -2,10 +2,13 @@ package deepgram
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/call-notes-ai-service/internal/config"
 	"github.com/call-notes-ai-service/internal/constants"
@@ -14,9 +17,19 @@ import (
 )
 
 var (
-	ErrInvalidDeepgramURL   = errors.New("invalid deepgram URL")
-	ErrWSConnectFailed      = errors.New("deepgram WebSocket connect failed")
-	ErrNoSessionConnection  = errors.New("no connection for session")
+	ErrInvalidDeepgramURL  = errors.New("invalid deepgram URL")
+	ErrWSConnectFailed     = errors.New("deepgram WebSocket connect failed")
+	ErrNoSessionConnection = errors.New("no connection for session")
+	ErrMaxReconnects       = errors.New("max reconnect attempts exceeded")
+)
+
+const (
+	maxReconnectAttempts = 3
+	baseReconnectDelay  = 100 * time.Millisecond
+	maxReconnectDelay   = 5 * time.Second
+	audioBufferSize     = 4096
+	pongWaitDuration    = 10 * time.Second
+	pingInterval        = 5 * time.Second
 )
 
 type TranscriptResult struct {
@@ -28,6 +41,31 @@ type TranscriptResult struct {
 	End        float64 `json:"end"`
 }
 
+type deepgramResponse struct {
+	Channel struct {
+		Alternatives []struct {
+			Transcript string  `json:"transcript"`
+			Confidence float64 `json:"confidence"`
+			Words      []struct {
+				Word       string  `json:"word"`
+				Start      float64 `json:"start"`
+				End        float64 `json:"end"`
+				Confidence float64 `json:"confidence"`
+				Speaker    int     `json:"speaker"`
+			} `json:"words"`
+		} `json:"alternatives"`
+	} `json:"channel"`
+	IsFinal bool    `json:"is_final"`
+	Start   float64 `json:"start"`
+	End     float64 `json:"duration"`
+}
+
+type sessionConn struct {
+	conn        *websocket.Conn
+	audioBuffer chan []byte
+	cancel      context.CancelFunc
+}
+
 type IClient interface {
 	Connect(ctx context.Context, sessionID string) error
 	SendAudio(sessionID string, audio []byte) error
@@ -36,16 +74,16 @@ type IClient interface {
 }
 
 type Client struct {
-	cfg         *config.DeepgramConfig
-	connections map[string]*websocket.Conn
-	mu          sync.RWMutex
+	cfg          *config.DeepgramConfig
+	sessions     map[string]*sessionConn
+	mu           sync.RWMutex
 	onTranscript func(sessionID string, result *TranscriptResult)
 }
 
 func NewClient(cfg *config.DeepgramConfig) IClient {
 	return &Client{
-		cfg:         cfg,
-		connections: make(map[string]*websocket.Conn),
+		cfg:      cfg,
+		sessions: make(map[string]*sessionConn),
 	}
 }
 
@@ -54,9 +92,35 @@ func (c *Client) OnTranscript(handler func(sessionID string, result *TranscriptR
 }
 
 func (c *Client) Connect(ctx context.Context, sessionID string) error {
+	conn, err := c.dial(ctx)
+	if err != nil {
+		return err
+	}
+
+	connCtx, cancel := context.WithCancel(ctx)
+	sc := &sessionConn{
+		conn:        conn,
+		audioBuffer: make(chan []byte, audioBufferSize),
+		cancel:      cancel,
+	}
+
+	c.mu.Lock()
+	c.sessions[sessionID] = sc
+	c.mu.Unlock()
+
+	logger.Info(constants.LogMsgDeepgramConnected, constants.LogFieldSessionID, sessionID)
+
+	go c.readLoop(connCtx, sessionID, sc)
+	go c.writeLoop(connCtx, sessionID, sc)
+	go c.pingLoop(connCtx, sessionID, sc)
+
+	return nil
+}
+
+func (c *Client) dial(ctx context.Context) (*websocket.Conn, error) {
 	u, err := url.Parse(c.cfg.WSURL)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidDeepgramURL, err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidDeepgramURL, err)
 	}
 
 	q := u.Query()
@@ -65,6 +129,8 @@ func (c *Client) Connect(ctx context.Context, sessionID string) error {
 	q.Set("smart_format", fmt.Sprintf("%t", c.cfg.SmartFormat))
 	q.Set("diarize", fmt.Sprintf("%t", c.cfg.Diarize))
 	q.Set("interim_results", fmt.Sprintf("%t", c.cfg.InterimResults))
+	q.Set("redact", "pci")
+	q.Set("redact", "ssn")
 	u.RawQuery = q.Encode()
 
 	header := make(map[string][]string)
@@ -72,37 +138,82 @@ func (c *Client) Connect(ctx context.Context, sessionID string) error {
 
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, u.String(), header)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrWSConnectFailed, err)
+		return nil, fmt.Errorf("%w: %v", ErrWSConnectFailed, err)
 	}
 
-	c.mu.Lock()
-	c.connections[sessionID] = conn
-	c.mu.Unlock()
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(pongWaitDuration))
+	})
 
-	logger.Info(constants.LogMsgDeepgramConnected, constants.LogFieldSessionID, sessionID)
+	return conn, nil
+}
 
-	go c.readLoop(sessionID, conn)
+func (c *Client) reconnect(ctx context.Context, sessionID string, sc *sessionConn) bool {
+	for attempt := 1; attempt <= maxReconnectAttempts; attempt++ {
+		delay := time.Duration(math.Min(
+			float64(baseReconnectDelay)*math.Pow(2, float64(attempt-1)),
+			float64(maxReconnectDelay),
+		))
 
-	return nil
+		logger.Warn("Deepgram reconnecting",
+			constants.LogFieldSessionID, sessionID,
+			constants.LogFieldAttempt, attempt,
+			constants.LogFieldBackoff, delay.String(),
+		)
+
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(delay):
+		}
+
+		conn, err := c.dial(ctx)
+		if err != nil {
+			logger.Warn("Deepgram reconnect failed",
+				constants.LogFieldSessionID, sessionID,
+				constants.LogFieldAttempt, attempt,
+				constants.LogKeyError, err,
+			)
+			continue
+		}
+
+		c.mu.Lock()
+		sc.conn = conn
+		c.mu.Unlock()
+
+		logger.Info("Deepgram reconnected",
+			constants.LogFieldSessionID, sessionID,
+			constants.LogFieldAttempt, attempt,
+		)
+		return true
+	}
+	return false
 }
 
 func (c *Client) SendAudio(sessionID string, audio []byte) error {
 	c.mu.RLock()
-	conn, ok := c.connections[sessionID]
+	sc, ok := c.sessions[sessionID]
 	c.mu.RUnlock()
 
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrNoSessionConnection, sessionID)
 	}
 
-	return conn.WriteMessage(websocket.BinaryMessage, audio)
+	select {
+	case sc.audioBuffer <- audio:
+	default:
+		logger.Warn("Audio buffer full, dropping chunk",
+			constants.LogFieldSessionID, sessionID,
+		)
+	}
+	return nil
 }
 
 func (c *Client) Close(sessionID string) error {
 	c.mu.Lock()
-	conn, ok := c.connections[sessionID]
+	sc, ok := c.sessions[sessionID]
 	if ok {
-		delete(c.connections, sessionID)
+		delete(c.sessions, sessionID)
 	}
 	c.mu.Unlock()
 
@@ -110,33 +221,125 @@ func (c *Client) Close(sessionID string) error {
 		return nil
 	}
 
+	sc.cancel()
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
-	_ = conn.WriteMessage(websocket.CloseMessage, closeMsg)
+	_ = sc.conn.WriteMessage(websocket.CloseMessage, closeMsg)
 	logger.Info(constants.LogMsgDeepgramDisconnected, constants.LogFieldSessionID, sessionID)
-	return conn.Close()
+	return sc.conn.Close()
 }
 
-func (c *Client) readLoop(sessionID string, conn *websocket.Conn) {
-	defer func() {
-		c.mu.Lock()
-		delete(c.connections, sessionID)
-		c.mu.Unlock()
-	}()
-
+func (c *Client) writeLoop(ctx context.Context, sessionID string, sc *sessionConn) {
 	for {
-		_, _, err := conn.ReadMessage()
-		if err != nil {
-			logger.Warn(constants.LogMsgDeepgramReadErr, constants.LogFieldSessionID, sessionID, constants.LogKeyError, err)
+		select {
+		case <-ctx.Done():
 			return
+		case audio, ok := <-sc.audioBuffer:
+			if !ok {
+				return
+			}
+			c.mu.RLock()
+			conn := sc.conn
+			c.mu.RUnlock()
+
+			if err := conn.WriteMessage(websocket.BinaryMessage, audio); err != nil {
+				logger.Warn("Deepgram write error",
+					constants.LogFieldSessionID, sessionID,
+					constants.LogKeyError, err,
+				)
+			}
+		}
+	}
+}
+
+func (c *Client) readLoop(ctx context.Context, sessionID string, sc *sessionConn) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
 		}
 
-		// TODO: Parse Deepgram JSON response into TranscriptResult
-		// and call c.onTranscript(sessionID, &result)
+		c.mu.RLock()
+		conn := sc.conn
+		c.mu.RUnlock()
+
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			logger.Warn(constants.LogMsgDeepgramReadErr,
+				constants.LogFieldSessionID, sessionID,
+				constants.LogKeyError, err,
+			)
+
+			if ctx.Err() != nil {
+				return
+			}
+
+			if !c.reconnect(ctx, sessionID, sc) {
+				logger.Error("Deepgram reconnect exhausted, session degraded",
+					constants.LogFieldSessionID, sessionID,
+				)
+				return
+			}
+			continue
+		}
+
+		var resp deepgramResponse
+		if err := json.Unmarshal(msg, &resp); err != nil {
+			continue
+		}
+
+		if len(resp.Channel.Alternatives) == 0 {
+			continue
+		}
+
+		alt := resp.Channel.Alternatives[0]
+		if alt.Transcript == "" {
+			continue
+		}
+
+		speaker := 0
+		if len(alt.Words) > 0 {
+			speaker = alt.Words[0].Speaker
+		}
+
+		if c.onTranscript != nil {
+			c.onTranscript(sessionID, &TranscriptResult{
+				Text:       alt.Transcript,
+				Confidence: alt.Confidence,
+				Speaker:    speaker,
+				IsFinal:    resp.IsFinal,
+				Start:      resp.Start,
+				End:        resp.End,
+			})
+		}
+	}
+}
+
+func (c *Client) pingLoop(ctx context.Context, sessionID string, sc *sessionConn) {
+	ticker := time.NewTicker(pingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.mu.RLock()
+			conn := sc.conn
+			c.mu.RUnlock()
+
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				logger.Warn("Deepgram ping failed",
+					constants.LogFieldSessionID, sessionID,
+					constants.LogKeyError, err,
+				)
+			}
+		}
 	}
 }
 
 func (c *Client) ActiveConnections() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return len(c.connections)
+	return len(c.sessions)
 }
