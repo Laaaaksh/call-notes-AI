@@ -10,9 +10,14 @@ import (
 	"github.com/call-notes-ai-service/internal/config"
 	"github.com/call-notes-ai-service/internal/constants"
 	"github.com/call-notes-ai-service/internal/logger"
+	"github.com/call-notes-ai-service/internal/modules/analytics"
 	"github.com/call-notes-ai-service/internal/modules/extraction"
+	"github.com/call-notes-ai-service/internal/modules/followup"
 	"github.com/call-notes-ai-service/internal/modules/health"
+	"github.com/call-notes-ai-service/internal/modules/prediction"
+	"github.com/call-notes-ai-service/internal/modules/sentiment"
 	"github.com/call-notes-ai-service/internal/modules/session"
+	"github.com/call-notes-ai-service/internal/modules/triage"
 	"github.com/call-notes-ai-service/internal/services/deepgram"
 	"github.com/call-notes-ai-service/internal/services/llm"
 	"github.com/call-notes-ai-service/internal/services/sfdc"
@@ -37,6 +42,11 @@ type Modules struct {
 	Health     health.IModule
 	Session    session.IModule
 	Extraction extraction.IModule
+	Prediction prediction.IModule
+	Sentiment  sentiment.IModule
+	Triage     triage.IModule
+	FollowUp   followup.IModule
+	Analytics  analytics.IModule
 }
 
 type Services struct {
@@ -149,14 +159,26 @@ func (a *App) initWSHub() {
 }
 
 func (a *App) initModules(ctx context.Context) {
+	pool := a.Database.GetPool()
+
 	healthModule := health.NewModule(ctx, a.Database)
 	extractionModule := extraction.NewModule(ctx, a.Services.LLM)
-	sessionModule := session.NewModule(ctx, a.Database.GetPool(), a.Redis)
+	sessionModule := session.NewModule(ctx, pool, a.Redis)
+	predictionModule := prediction.NewModule(pool)
+	sentimentModule := sentiment.NewModule(pool)
+	triageModule := triage.NewModule(pool)
+	followupModule := followup.NewModule(pool)
+	analyticsModule := analytics.NewModule(pool)
 
 	a.Modules = &Modules{
 		Health:     healthModule,
 		Session:    sessionModule,
 		Extraction: extractionModule,
+		Prediction: predictionModule,
+		Sentiment:  sentimentModule,
+		Triage:     triageModule,
+		FollowUp:   followupModule,
+		Analytics:  analyticsModule,
 	}
 }
 
@@ -177,6 +199,10 @@ func (a *App) createMainRouter() chi.Router {
 
 	r.Route(constants.APIVersionPrefix, func(r chi.Router) {
 		a.Modules.Session.GetHandler().RegisterRoutes(r)
+		a.Modules.Prediction.GetHandler().RegisterRoutes(r)
+		a.Modules.Triage.GetHandler().RegisterRoutes(r)
+		a.Modules.FollowUp.GetHandler().RegisterRoutes(r)
+		a.Modules.Analytics.GetHandler().RegisterRoutes(r)
 	})
 
 	return r

@@ -212,6 +212,51 @@ const (
 	LogMsgTranscriptChunkProcessed = "Transcript chunk processed"
 )
 
+// Log field keys — futuristic modules
+const (
+	LogFieldPatientPhone   = "patient_phone"
+	LogFieldPredictedCount = "predicted_count"
+	LogFieldSessionCount   = "session_count"
+	LogFieldEmotionType    = "emotion_type"
+	LogFieldIntensity      = "intensity"
+	LogFieldUrgencyLevel   = "urgency_level"
+	LogFieldTriageScore    = "triage_score"
+	LogFieldFollowupType   = "followup_type"
+	LogFieldFollowupID     = "followup_id"
+	LogFieldFollowupStatus = "followup_status"
+	LogFieldDueDate        = "due_date"
+)
+
+// Log messages — prediction module
+const (
+	LogMsgPredictionLookupFailed = "Patient history lookup failed"
+	LogMsgPredictionComplete     = "Predictive pre-population complete"
+)
+
+// Log messages — sentiment module
+const (
+	LogMsgSentimentLogFailed       = "Failed to log sentiment"
+	LogMsgSentimentAlertTriggered  = "Sentiment alert triggered"
+)
+
+// Log messages — triage module
+const (
+	LogMsgTriageAssessmentFailed = "Triage assessment persistence failed"
+	LogMsgTriageUpdated          = "Triage assessment updated"
+)
+
+// Log messages — follow-up module
+const (
+	LogMsgFollowupDetected    = "Follow-up detected in transcript"
+	LogMsgFollowupCreateFailed = "Failed to create follow-up"
+	LogMsgFollowupConfirmed   = "Follow-up confirmed by agent"
+)
+
+// Log messages — analytics module
+const (
+	LogMsgAnalyticsQueryFailed = "Analytics query failed"
+)
+
 // Metrics
 const (
 	MetricRequestDuration   = "http_request_duration_seconds"

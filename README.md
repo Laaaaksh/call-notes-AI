@@ -78,6 +78,8 @@ The service starts on two ports:
 
 ## Verify It Works
 
+### Core APIs
+
 ```bash
 # Health check
 curl http://localhost:8081/health/live
@@ -98,6 +100,7 @@ curl -X POST http://localhost:8080/v1/sessions \
 
 # Get session state
 curl http://localhost:8080/v1/sessions/<session_id>
+# → {"session_id":"...","status":"CREATED","fields":{},"transcript_len":0}
 
 # Update fields (agent review / AI extraction)
 curl -X PATCH http://localhost:8080/v1/sessions/<session_id>/fields \
@@ -111,6 +114,7 @@ curl -X PATCH http://localhost:8080/v1/sessions/<session_id>/fields \
       {"field_name": "severity", "value": "7/10"}
     ]
   }'
+# → {"status":"updated"}
 
 # Submit session (triggers Salesforce upsert)
 curl -X POST http://localhost:8080/v1/sessions/<session_id>/submit \
@@ -126,8 +130,46 @@ curl -X POST http://localhost:8080/v1/sessions/<session_id>/submit \
 curl http://localhost:8081/metrics
 ```
 
+### Futuristic Feature APIs
+
+```bash
+# Predictive Pre-population — returns patient history for returning patients
+curl http://localhost:8080/v1/patients/+919876543210/history
+# → {"patient_phone":"+919876543210","total_sessions":1,"predicted_fields":[]}
+
+# Triage Assessment — returns urgency scoring for a session
+curl http://localhost:8080/v1/sessions/<session_id>/triage
+# → {"error":"triage assessment not found"}  (none created yet — populated during live calls)
+
+# Follow-ups — returns detected follow-up actions for a session
+curl http://localhost:8080/v1/sessions/<session_id>/followups
+# → {"followups":[]}
+
+# Follow-up Confirm — agent confirms or dismisses a detected follow-up
+curl -X POST http://localhost:8080/v1/sessions/<session_id>/followups/confirm \
+  -H "Content-Type: application/json" \
+  -d '{"followup_id": "<followup_uuid>", "confirmed": true, "agent_id": "agent-ramesh"}'
+
+# Analytics Overview — dashboard summary for a date range
+curl "http://localhost:8080/v1/analytics/overview?from=2026-03-01&to=2026-03-13"
+# → {"time_range":{...},"total_calls":3,"avg_call_duration_min":0,...}
+
+# Analytics — Top conditions by frequency
+curl "http://localhost:8080/v1/analytics/conditions?from=2026-03-01&to=2026-03-13&limit=10"
+# → {"time_range":{...},"conditions":[{"condition":"knee pain","count":2,"pct":0}],"total":2}
+
+# Analytics — Agent performance metrics
+curl "http://localhost:8080/v1/analytics/agents/agent-ramesh/performance?from=2026-03-01&to=2026-03-13"
+# → {"agent_id":"agent-ramesh","total_calls":2,...}
+
+# Analytics — Sentiment trends over time
+curl "http://localhost:8080/v1/analytics/sentiment?from=2026-03-01&to=2026-03-13&granularity=daily"
+# → {"time_range":{...},"granularity":"daily","data_points":[]}
+```
+
 ## API Endpoints
 
+### Core APIs
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health/live` | Liveness probe |
@@ -137,6 +179,18 @@ curl http://localhost:8081/metrics
 | GET | `/v1/sessions/{id}` | Get session state with extracted fields |
 | PATCH | `/v1/sessions/{id}/fields` | Agent field overrides |
 | POST | `/v1/sessions/{id}/submit` | Submit session to Salesforce |
+
+### Futuristic Feature APIs
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/patients/{phone}/history` | Get predicted pre-fill fields for returning patient |
+| GET | `/v1/sessions/{id}/triage` | Get triage/urgency assessment for session |
+| GET | `/v1/sessions/{id}/followups` | List detected follow-ups for session |
+| POST | `/v1/sessions/{id}/followups/confirm` | Confirm or dismiss a detected follow-up |
+| GET | `/v1/analytics/overview` | Dashboard overview (calls, accuracy, triage, sentiment) |
+| GET | `/v1/analytics/conditions` | Top conditions with frequency trends |
+| GET | `/v1/analytics/agents/{id}/performance` | Per-agent accuracy and override metrics |
+| GET | `/v1/analytics/sentiment` | Sentiment distribution over time |
 
 ## Project Structure
 
@@ -161,6 +215,11 @@ call-notes-ai-service/
 │   │   │   ├── rule_engine.go       #   L1: Regex + Hindi dictionary
 │   │   │   ├── llm_reasoner.go      #   L3: Conditional LLM reasoning
 │   │   │   └── core.go              #   Pipeline orchestrator
+│   │   ├── prediction/              # Predictive pre-population (history)
+│   │   ├── sentiment/               # Voice emotion/sentiment detection
+│   │   ├── triage/                  # Predictive triage scoring
+│   │   ├── followup/                # Auto follow-up scheduling
+│   │   ├── analytics/               # Post-call analytics dashboards
 │   │   ├── fieldmapper/             # Entity → Salesforce field mapping
 │   │   ├── reasoning/               # LLM conflict resolution
 │   │   └── salesforce/              # Salesforce upsert orchestration
@@ -222,6 +281,10 @@ make migrate-version
 | `extracted_fields` | Versioned field extractions with confidence + source |
 | `agent_overrides` | Audit trail of agent corrections (AI value vs agent value) |
 | `audit_logs` | General audit events (JSONB details) |
+| `patient_history_cache` | Patient field history for predictive pre-population |
+| `sentiment_logs` | Per-segment emotion detection logs |
+| `triage_assessments` | Session urgency scores with symptoms and modifiers |
+| `follow_ups` | Detected and confirmed follow-up actions |
 
 ## Docker
 
@@ -277,6 +340,5 @@ The 3-layer hybrid NLP pipeline minimizes LLM cost while maximizing accuracy:
 
 ## Documentation
 
-- **Technical Spec**: `docs/call-notes-ai-tech-spec.md` (1336 lines, 17 sections)
-- **Edge Cases**: `memory-bank/edge-cases.md` (50+ scenarios)
-- **Architecture Decisions**: `memory-bank/activeContext.md`
+- **Core Technical Spec**: `docs/call-notes-ai-tech-spec.md`
+- **Futuristic Scope Spec**: `docs/call-notes-ai-futuristic-scope.md`
