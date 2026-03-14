@@ -51,7 +51,7 @@ func (r *RuleEngine) extractPhone(text string, seg *entities.TranscriptSegment) 
 	for _, m := range matches {
 		results = append(results, entities.MedicalEntity{
 			Type: entities.EntityPhone, RawValue: m, NormalizedValue: m,
-			Confidence: 0.95, SourceLayer: constants.SourceRuleEngine, TranscriptRef: seg.Text,
+			Confidence: 0.95, SourceLayer: constants.SourceRuleEngine.String(), TranscriptRef: seg.Text,
 		})
 	}
 	return results
@@ -64,7 +64,7 @@ func (r *RuleEngine) extractAge(text string, seg *entities.TranscriptSegment) []
 	}
 	return []entities.MedicalEntity{{
 		Type: entities.EntityAge, RawValue: matches[0], NormalizedValue: matches[1],
-		Confidence: 0.92, SourceLayer: constants.SourceRuleEngine, TranscriptRef: seg.Text,
+		Confidence: 0.92, SourceLayer: constants.SourceRuleEngine.String(), TranscriptRef: seg.Text,
 	}}
 }
 
@@ -77,7 +77,7 @@ func (r *RuleEngine) extractDuration(text string, seg *entities.TranscriptSegmen
 	normalized := matches[1] + " " + unit
 	return []entities.MedicalEntity{{
 		Type: entities.EntityDuration, RawValue: matches[0], NormalizedValue: normalized,
-		Confidence: 0.90, SourceLayer: constants.SourceRuleEngine, TranscriptRef: seg.Text,
+		Confidence: 0.90, SourceLayer: constants.SourceRuleEngine.String(), TranscriptRef: seg.Text,
 	}}
 }
 
@@ -88,7 +88,7 @@ func (r *RuleEngine) extractSeverityNumeric(text string, seg *entities.Transcrip
 	}
 	return []entities.MedicalEntity{{
 		Type: entities.EntitySeverity, RawValue: matches[0], NormalizedValue: matches[1] + "/10",
-		Confidence: 0.93, SourceLayer: constants.SourceRuleEngine, TranscriptRef: seg.Text,
+		Confidence: 0.93, SourceLayer: constants.SourceRuleEngine.String(), TranscriptRef: seg.Text,
 	}}
 }
 
@@ -101,7 +101,7 @@ func (r *RuleEngine) extractHindiMedicalTerms(text string, seg *entities.Transcr
 			isNeg := r.isNegated(lower, hindi)
 			results = append(results, entities.MedicalEntity{
 				Type: entities.EntitySymptom, RawValue: hindi, NormalizedValue: english,
-				Confidence: 0.85, SourceLayer: constants.SourceRuleEngine, TranscriptRef: seg.Text,
+				Confidence: 0.85, SourceLayer: constants.SourceRuleEngine.String(), TranscriptRef: seg.Text,
 				IsNegated: isNeg,
 			})
 		}

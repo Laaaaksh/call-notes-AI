@@ -42,49 +42,74 @@ Talkdesk ──→ Audio Stream ──→ Deepgram STT ──→ Transcript Pipe
 | CRM | Salesforce REST API |
 | Metrics | Prometheus |
 | Logging | Zap (structured JSON) |
-| Tracing | OpenTelemetry |
+| Tracing | OpenTelemetry + Jaeger |
 
 ## Prerequisites
 
-- **Go** 1.24+
-- **Docker** & Docker Compose
-- **migrate** CLI (installed automatically via `make deps-install`)
+| Tool | Version | Install |
+|------|---------|---------|
+| Go | 1.24+ | [golang.org/dl](https://golang.org/dl/) |
+| Docker | 20+ | [docs.docker.com](https://docs.docker.com/get-docker/) |
+| Docker Compose | v2+ | Included with Docker Desktop |
 
-## Quick Start
+All other tools (`migrate`, `mockgen`, `golangci-lint`, `goimports`) are installed automatically by `make setup`.
+
+## Quick Start (One Command)
 
 ```bash
-# 1. Clone and enter directory
 cd call-notes-ai-service
+make setup
+```
 
-# 2. Install dev tools (migrate, mockgen, golangci-lint)
-make deps-install
+This runs 5 steps automatically:
+1. Installs dev tools (migrate, mockgen, golangci-lint, goimports)
+2. Downloads Go dependencies
+3. Starts infrastructure (Postgres, Redis, Kafka via Docker)
+4. Runs database migrations
+5. Builds the binary
 
-# 3. Download Go dependencies
-make deps
+Then start the service:
 
-# 4. Start infrastructure (Postgres, Redis, Kafka)
-make docker-up
-
-# 5. Run database migrations
-make migrate-up
-
-# 6. Start the service
+```bash
 make run
 ```
 
 The service starts on two ports:
-- **:8080** — Main API (session management, field updates)
+- **:8080** — Main API (session management, field updates, analytics)
 - **:8081** — Ops (health checks, Prometheus metrics)
+
+## Manual Step-by-Step Setup
+
+If you prefer to run each step individually:
+
+```bash
+# 1. Install dev tools
+make deps-install
+
+# 2. Download Go dependencies
+make deps
+
+# 3. Start infrastructure (Postgres, Redis, Kafka)
+make docker-up
+
+# 4. Wait for Postgres to be ready, then run migrations
+make migrate-up
+
+# 5. Build the binary
+make build
+
+# 6. Run the service
+make run
+```
 
 ## Verify It Works
 
-### Core APIs
-
 ```bash
-# Health check
+# Liveness check
 curl http://localhost:8081/health/live
 # → {"status":"SERVING"}
 
+# Readiness check (verifies DB connection)
 curl http://localhost:8081/health/ready
 # → {"status":"SERVING"}
 
@@ -100,76 +125,30 @@ curl -X POST http://localhost:8080/v1/sessions \
 
 # Get session state
 curl http://localhost:8080/v1/sessions/<session_id>
-# → {"session_id":"...","status":"CREATED","fields":{},"transcript_len":0}
 
-# Update fields (agent review / AI extraction)
+# Update fields (agent override)
 curl -X PATCH http://localhost:8080/v1/sessions/<session_id>/fields \
   -H "Content-Type: application/json" \
   -d '{
     "overrides": [
       {"field_name": "patient_name", "value": "Rajesh Kumar"},
-      {"field_name": "primary_symptom", "value": "knee pain"},
-      {"field_name": "body_part", "value": "right knee"},
-      {"field_name": "duration", "value": "2 weeks"},
-      {"field_name": "severity", "value": "7/10"}
+      {"field_name": "primary_symptom", "value": "knee pain"}
     ]
   }'
-# → {"status":"updated"}
 
-# Submit session (triggers Salesforce upsert)
+# Submit session
 curl -X POST http://localhost:8080/v1/sessions/<session_id>/submit \
   -H "Content-Type: application/json" \
-  -d '{
-    "overrides": [
-      {"field_name": "medication", "value": "Paracetamol 500mg"}
-    ]
-  }'
-# → {"session_id":"<uuid>","sf_record_id":"","status":"SUBMITTED"}
+  -d '{"overrides": []}'
 
 # Prometheus metrics
 curl http://localhost:8081/metrics
 ```
 
-### Futuristic Feature APIs
-
-```bash
-# Predictive Pre-population — returns patient history for returning patients
-curl http://localhost:8080/v1/patients/+919876543210/history
-# → {"patient_phone":"+919876543210","total_sessions":1,"predicted_fields":[]}
-
-# Triage Assessment — returns urgency scoring for a session
-curl http://localhost:8080/v1/sessions/<session_id>/triage
-# → {"error":"triage assessment not found"}  (none created yet — populated during live calls)
-
-# Follow-ups — returns detected follow-up actions for a session
-curl http://localhost:8080/v1/sessions/<session_id>/followups
-# → {"followups":[]}
-
-# Follow-up Confirm — agent confirms or dismisses a detected follow-up
-curl -X POST http://localhost:8080/v1/sessions/<session_id>/followups/confirm \
-  -H "Content-Type: application/json" \
-  -d '{"followup_id": "<followup_uuid>", "confirmed": true, "agent_id": "agent-ramesh"}'
-
-# Analytics Overview — dashboard summary for a date range
-curl "http://localhost:8080/v1/analytics/overview?from=2026-03-01&to=2026-03-13"
-# → {"time_range":{...},"total_calls":3,"avg_call_duration_min":0,...}
-
-# Analytics — Top conditions by frequency
-curl "http://localhost:8080/v1/analytics/conditions?from=2026-03-01&to=2026-03-13&limit=10"
-# → {"time_range":{...},"conditions":[{"condition":"knee pain","count":2,"pct":0}],"total":2}
-
-# Analytics — Agent performance metrics
-curl "http://localhost:8080/v1/analytics/agents/agent-ramesh/performance?from=2026-03-01&to=2026-03-13"
-# → {"agent_id":"agent-ramesh","total_calls":2,...}
-
-# Analytics — Sentiment trends over time
-curl "http://localhost:8080/v1/analytics/sentiment?from=2026-03-01&to=2026-03-13&granularity=daily"
-# → {"time_range":{...},"granularity":"daily","data_points":[]}
-```
-
-## API Endpoints
+## API Reference
 
 ### Core APIs
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health/live` | Liveness probe |
@@ -179,18 +158,37 @@ curl "http://localhost:8080/v1/analytics/sentiment?from=2026-03-01&to=2026-03-13
 | GET | `/v1/sessions/{id}` | Get session state with extracted fields |
 | PATCH | `/v1/sessions/{id}/fields` | Agent field overrides |
 | POST | `/v1/sessions/{id}/submit` | Submit session to Salesforce |
+| DELETE | `/v1/sessions/{id}/purge` | Purge session data (DPDP compliance) |
 
 ### Futuristic Feature APIs
+
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/v1/patients/{phone}/history` | Get predicted pre-fill fields for returning patient |
-| GET | `/v1/sessions/{id}/triage` | Get triage/urgency assessment for session |
-| GET | `/v1/sessions/{id}/followups` | List detected follow-ups for session |
+| GET | `/v1/patients/{phone}/history` | Predicted pre-fill fields for returning patients |
+| GET | `/v1/sessions/{id}/triage` | Triage/urgency assessment for session |
+| GET | `/v1/sessions/{id}/followups` | Detected follow-up actions for session |
 | POST | `/v1/sessions/{id}/followups/confirm` | Confirm or dismiss a detected follow-up |
-| GET | `/v1/analytics/overview` | Dashboard overview (calls, accuracy, triage, sentiment) |
-| GET | `/v1/analytics/conditions` | Top conditions with frequency trends |
+| GET | `/v1/analytics/overview` | Dashboard overview (calls, accuracy, triage) |
+| GET | `/v1/analytics/conditions` | Top conditions with frequency |
 | GET | `/v1/analytics/agents/{id}/performance` | Per-agent accuracy and override metrics |
 | GET | `/v1/analytics/sentiment` | Sentiment distribution over time |
+
+## Environment Variables
+
+All config lives in `config/default.toml`. Override via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `APP_ENV` | `dev` | Environment (dev/test/prod) |
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_USER` | `postgres` | PostgreSQL user |
+| `DB_PASSWORD` | `postgres` | PostgreSQL password |
+| `DB_NAME` | `callnotes` | PostgreSQL database name |
+| `DEEPGRAM_API_KEY` | — | Deepgram STT API key |
+| `SF_INSTANCE_URL` | — | Salesforce instance URL |
+| `SF_CLIENT_ID` | — | Salesforce OAuth client ID |
+| `SF_CLIENT_SECRET` | — | Salesforce OAuth client secret |
 
 ## Project Structure
 
@@ -201,76 +199,55 @@ call-notes-ai-service/
 ├── internal/
 │   ├── boot/boot.go                 # Application bootstrap, DI wiring
 │   ├── config/config.go             # Typed config structs
-│   ├── constants/                   # String constants, context keys
+│   ├── constants/                   # Split constant files (session, http, log, metrics, errors)
 │   ├── database/migrations/         # PostgreSQL schema migrations
-│   ├── interceptors/                # HTTP middleware chain
-│   ├── logger/                      # Structured zap logging
+│   ├── interceptors/                # Full HTTP middleware chain (13 middlewares)
+│   │   ├── init.go                  # Chain builder, GetChiMiddlewareWithFullConfig
+│   │   ├── http.go                  # Recovery, logging, metrics, security, timeout
+│   │   ├── tracing.go              # OpenTelemetry tracing middleware
+│   │   └── ratelimit.go            # Token bucket rate limiting
+│   ├── logger/                      # Structured zap logging with context
 │   ├── metrics/                     # Prometheus metrics definitions
+│   ├── tracing/                     # OpenTelemetry tracer setup
+│   ├── utils/                       # Shared helpers (JSON, validation)
 │   ├── websocket/                   # WebSocket hub for agent UI
 │   ├── modules/
 │   │   ├── health/                  # Liveness + readiness probes
 │   │   ├── session/                 # Call session lifecycle, CRUD
 │   │   ├── transcription/           # Transcript chunk processing
 │   │   ├── extraction/              # 3-layer NLP pipeline
-│   │   │   ├── rule_engine.go       #   L1: Regex + Hindi dictionary
-│   │   │   ├── llm_reasoner.go      #   L3: Conditional LLM reasoning
-│   │   │   └── core.go              #   Pipeline orchestrator
-│   │   ├── prediction/              # Predictive pre-population (history)
+│   │   ├── fieldmapper/             # Entity → Salesforce field mapping
+│   │   ├── reasoning/               # LLM conflict resolution
+│   │   ├── salesforce/              # Salesforce upsert orchestration
+│   │   ├── prediction/              # Predictive pre-population
 │   │   ├── sentiment/               # Voice emotion/sentiment detection
 │   │   ├── triage/                  # Predictive triage scoring
 │   │   ├── followup/                # Auto follow-up scheduling
-│   │   ├── analytics/               # Post-call analytics dashboards
-│   │   ├── fieldmapper/             # Entity → Salesforce field mapping
-│   │   ├── reasoning/               # LLM conflict resolution
-│   │   └── salesforce/              # Salesforce upsert orchestration
+│   │   └── analytics/               # Post-call analytics dashboards
 │   └── services/
 │       ├── deepgram/                # Deepgram WebSocket STT client
 │       ├── llm/                     # AWS Bedrock Claude client
 │       └── sfdc/                    # Salesforce REST API client
 ├── pkg/
-│   ├── apperror/                    # Typed application errors
-│   └── database/                    # PostgreSQL pool management
+│   ├── apperror/                    # Typed application errors (codes, responses)
+│   ├── config/                      # Config loader with env var template expansion
+│   └── database/                    # PostgreSQL pool management (IPool interface)
 ├── deployment/dev/                  # Docker Compose (Postgres, Redis, Kafka)
 ├── Dockerfile                       # Multi-stage production build
-├── Makefile                         # Build, test, docker, migrate targets
+├── Makefile                         # Build, test, docker, migrate, trace targets
 └── go.mod
 ```
 
 Each module follows the pattern: `init.go` → `core.go` → `server.go` → `repository.go` → `entities/`
 
-## Configuration
-
-All config lives in `config/default.toml`. Override via environment variables:
-
-```bash
-# Database
-export DB_HOST=myhost
-export DB_PASSWORD=secret
-
-# Deepgram
-export DEEPGRAM_API_KEY=your-key
-
-# Salesforce
-export SF_INSTANCE_URL=https://myorg.salesforce.com
-export SF_CLIENT_ID=...
-export SF_CLIENT_SECRET=...
-```
-
 ## Database
 
 ```bash
-# Run migrations
-make migrate-up
-
-# Rollback one migration
-make migrate-down-one
-
-# Create a new migration
-make migrate-create
-# Enter name: add_transcript_table
-
-# Check current version
-make migrate-version
+make migrate-up         # Run all pending migrations
+make migrate-down-one   # Rollback one migration
+make migrate-create     # Create a new migration file
+make migrate-version    # Check current version
+make migrate-force      # Force a specific version (for stuck migrations)
 ```
 
 ### Schema
@@ -279,42 +256,62 @@ make migrate-version
 |-------|---------|
 | `call_sessions` | Call session lifecycle (status, agent, timestamps) |
 | `extracted_fields` | Versioned field extractions with confidence + source |
-| `agent_overrides` | Audit trail of agent corrections (AI value vs agent value) |
+| `agent_overrides` | Audit trail of agent corrections |
 | `audit_logs` | General audit events (JSONB details) |
 | `patient_history_cache` | Patient field history for predictive pre-population |
 | `sentiment_logs` | Per-segment emotion detection logs |
 | `triage_assessments` | Session urgency scores with symptoms and modifiers |
 | `follow_ups` | Detected and confirmed follow-up actions |
 
-## Docker
+## Tracing
+
+For local distributed tracing with Jaeger:
 
 ```bash
-make docker-up       # Start Postgres + Redis + Kafka
-make docker-down     # Stop containers
-make docker-clean    # Stop + remove volumes
-make docker-status   # Check container health
-make docker-logs     # Tail all logs
+make trace-up    # Start Jaeger (UI: http://localhost:16686)
+make trace-down  # Stop Jaeger
 ```
 
-## Testing
+Then enable tracing in `config/default.toml`:
 
-```bash
-make test            # Run all tests (verbose, race detector)
-make test-short      # Quick run
-make test-coverage   # Generate coverage report (coverage.html)
+```toml
+[tracing]
+enabled = true
+endpoint = "localhost:4317"
+sample_rate = 1.0
+insecure = true
 ```
 
 ## Makefile Targets
 
 ```bash
-make help            # Show all available commands
-make setup           # First-time setup (tools + deps + docker + migrate)
-make build           # Build binary to bin/
-make run             # Run the service
-make lint            # Run golangci-lint
-make fmt             # Format code
-make mock            # Generate test mocks
+make help    # Show all available commands with descriptions
 ```
+
+| Category | Command | Description |
+|----------|---------|-------------|
+| **Setup** | `make setup` | First-time setup (tools + deps + docker + migrate + build) |
+| **Build** | `make build` | Build binary to `bin/` |
+| | `make run` | Run the service |
+| | `make run-dev` | Run with hot reload (requires `air`) |
+| **Test** | `make test` | Run all tests (verbose, race detector) |
+| | `make test-short` | Quick test run |
+| | `make test-coverage` | Generate coverage report |
+| **Quality** | `make lint` | Run golangci-lint |
+| | `make vet` | Run go vet |
+| | `make check` | Run vet + lint + test |
+| | `make fmt` | Format code |
+| **Docker** | `make docker-up` | Start Postgres + Redis + Kafka |
+| | `make docker-down` | Stop containers |
+| | `make docker-clean` | Stop + remove volumes |
+| | `make docker-build` | Build Docker image |
+| | `make docker-run` | Run Docker container |
+| **Database** | `make migrate-up` | Run migrations |
+| | `make migrate-down` | Rollback all |
+| | `make migrate-force` | Force migration version |
+| **Tracing** | `make trace-up` | Start Jaeger |
+| | `make trace-down` | Stop Jaeger |
+| **Mocks** | `make mock` | Generate test mocks |
 
 ## Extraction Pipeline
 
@@ -334,9 +331,35 @@ The 3-layer hybrid NLP pipeline minimizes LLM cost while maximizing accuracy:
 - ICD-10 / SNOMED code mapping
 
 **Layer 3 — LLM Reasoning** (cost: ~$0.001/call, latency: <500ms)
-- **Only invoked when needed**: corrections, contradictions, ambiguity
+- Only invoked when needed: corrections, contradictions, ambiguity
 - Transcript grounding: every output must trace to transcript text
 - Claude 3.5 Haiku via AWS Bedrock (GPT-4o-mini fallback)
+
+## Troubleshooting
+
+### Docker containers won't start
+```bash
+make docker-clean    # Remove old volumes
+make docker-up       # Start fresh
+```
+
+### Migration stuck / dirty state
+```bash
+make migrate-force   # Enter the version number to force
+make migrate-up      # Re-run migrations
+```
+
+### Port already in use
+```bash
+lsof -i :8080       # Find the process
+kill -9 <PID>        # Kill it
+```
+
+### Redis connection failed
+The service continues without Redis — session caching is disabled but all other features work. Check Redis is running:
+```bash
+docker ps | grep redis
+```
 
 ## Documentation
 

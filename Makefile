@@ -1,11 +1,16 @@
 # Call Notes AI Service Makefile
 
-.PHONY: all build run test test-coverage test-short lint clean docker-up docker-down docker-status \
-        migrate-up migrate-down migrate-create mock mock-clean deps deps-install fmt verify help setup
+.PHONY: all build run test test-coverage test-short lint vet check fmt clean clean-all \
+        docker-up docker-down docker-clean docker-status docker-logs docker-build docker-run \
+        migrate-up migrate-down migrate-down-one migrate-create migrate-version migrate-force \
+        mock mock-clean deps deps-install trace-up trace-down verify setup help
 
 BINARY_NAME=call-notes-ai-service
 BUILD_DIR=bin
 MIGRATION_DIR=internal/database/migrations
+DOCKER_COMPOSE=deployment/dev/docker-compose.yml
+DOCKER_IMAGE=call-notes-ai-service
+
 DB_HOST ?= localhost
 DB_PORT ?= 5432
 DB_USER ?= postgres
@@ -18,7 +23,7 @@ YELLOW := \033[0;33m
 RED    := \033[0;31m
 NC     := \033[0m
 
-all: lint test build
+all: lint vet test build
 
 ## ==================== Build & Run ====================
 
@@ -59,6 +64,13 @@ lint:
 	@echo "$(GREEN)Running linter...$(NC)"
 	@golangci-lint run ./...
 
+vet:
+	@echo "$(GREEN)Running go vet...$(NC)"
+	@go vet ./...
+
+check: vet lint test
+	@echo "$(GREEN)All checks passed$(NC)"
+
 fmt:
 	@echo "$(GREEN)Formatting code...$(NC)"
 	@gofmt -s -w .
@@ -81,25 +93,34 @@ clean-all: clean mock-clean
 
 docker-up:
 	@echo "$(GREEN)Starting Docker containers...$(NC)"
-	@docker-compose -f deployment/dev/docker-compose.yml up -d
+	@docker-compose -f $(DOCKER_COMPOSE) up -d
 	@echo "$(GREEN)Waiting for services to be ready...$(NC)"
 	@sleep 5
 	@make docker-status
 
 docker-down:
 	@echo "$(YELLOW)Stopping Docker containers...$(NC)"
-	@docker-compose -f deployment/dev/docker-compose.yml down
+	@docker-compose -f $(DOCKER_COMPOSE) down
 
 docker-clean:
 	@echo "$(RED)Stopping Docker containers and removing volumes...$(NC)"
-	@docker-compose -f deployment/dev/docker-compose.yml down -v
+	@docker-compose -f $(DOCKER_COMPOSE) down -v
 
 docker-status:
 	@echo "$(GREEN)Docker container status:$(NC)"
-	@docker-compose -f deployment/dev/docker-compose.yml ps
+	@docker-compose -f $(DOCKER_COMPOSE) ps
 
 docker-logs:
-	@docker-compose -f deployment/dev/docker-compose.yml logs -f
+	@docker-compose -f $(DOCKER_COMPOSE) logs -f
+
+docker-build:
+	@echo "$(GREEN)Building Docker image...$(NC)"
+	@docker build -t $(DOCKER_IMAGE):latest .
+	@echo "$(GREEN)Docker image built: $(DOCKER_IMAGE):latest$(NC)"
+
+docker-run:
+	@echo "$(GREEN)Running Docker container...$(NC)"
+	@docker run --rm -p 8080:8080 -p 8081:8081 --env-file .env $(DOCKER_IMAGE):latest
 
 ## ==================== Database ====================
 
@@ -123,20 +144,46 @@ migrate-create:
 migrate-version:
 	@migrate -path $(MIGRATION_DIR) -database "$(DB_URL)" version
 
+migrate-force:
+	@read -p "Enter version to force: " version; \
+	migrate -path $(MIGRATION_DIR) -database "$(DB_URL)" force $$version
+
+## ==================== Tracing ====================
+
+trace-up:
+	@echo "$(GREEN)Starting Jaeger for local tracing...$(NC)"
+	@docker run -d --name jaeger \
+		-p 16686:16686 \
+		-p 4317:4317 \
+		jaegertracing/all-in-one:latest
+	@echo "$(GREEN)Jaeger UI: http://localhost:16686$(NC)"
+
+trace-down:
+	@echo "$(YELLOW)Stopping Jaeger...$(NC)"
+	@docker rm -f jaeger 2>/dev/null || true
+
 ## ==================== Mock Generation ====================
 
 mock: mock-clean
 	@echo "$(GREEN)Generating mocks...$(NC)"
 	@echo "  Generating session mocks..."
+	@mkdir -p internal/modules/session/mock
 	@mockgen -source=internal/modules/session/repository.go -destination=internal/modules/session/mock/mock_repository.go -package=mock
 	@mockgen -source=internal/modules/session/core.go -destination=internal/modules/session/mock/mock_core.go -package=mock
 	@echo "  Generating extraction mocks..."
+	@mkdir -p internal/modules/extraction/mock
 	@mockgen -source=internal/modules/extraction/core.go -destination=internal/modules/extraction/mock/mock_core.go -package=mock
+	@echo "  Generating database pool mock..."
+	@mkdir -p pkg/database/mock
+	@mockgen -source=pkg/database/pool.go -destination=pkg/database/mock/mock_pool.go -package=mock
 	@echo "  Generating LLM client mocks..."
+	@mkdir -p internal/services/llm/mock
 	@mockgen -source=internal/services/llm/client.go -destination=internal/services/llm/mock/mock_client.go -package=mock
 	@echo "  Generating Deepgram client mocks..."
+	@mkdir -p internal/services/deepgram/mock
 	@mockgen -source=internal/services/deepgram/client.go -destination=internal/services/deepgram/mock/mock_client.go -package=mock
 	@echo "  Generating SFDC client mocks..."
+	@mkdir -p internal/services/sfdc/mock
 	@mockgen -source=internal/services/sfdc/client.go -destination=internal/services/sfdc/mock/mock_client.go -package=mock
 	@echo "$(GREEN)Mocks generated successfully$(NC)"
 
@@ -147,6 +194,7 @@ mock-clean:
 	@rm -f internal/services/llm/mock/*.go
 	@rm -f internal/services/deepgram/mock/*.go
 	@rm -f internal/services/sfdc/mock/*.go
+	@rm -f pkg/database/mock/*.go
 
 ## ==================== Dependencies ====================
 
@@ -174,18 +222,18 @@ setup:
 	@echo "$(GREEN)[1/5] Installing development tools...$(NC)"
 	@$(MAKE) deps-install --no-print-directory
 	@echo ""
-	@echo "$(GREEN)[2/5] Generating mock files...$(NC)"
-	@$(MAKE) mock --no-print-directory
-	@echo ""
-	@echo "$(GREEN)[3/5] Downloading dependencies...$(NC)"
+	@echo "$(GREEN)[2/5] Downloading dependencies...$(NC)"
 	@$(MAKE) deps --no-print-directory
 	@echo ""
-	@echo "$(GREEN)[4/5] Starting infrastructure...$(NC)"
+	@echo "$(GREEN)[3/5] Starting infrastructure...$(NC)"
 	@$(MAKE) docker-up --no-print-directory
 	@echo ""
-	@echo "$(GREEN)[5/5] Running database migrations...$(NC)"
+	@echo "$(GREEN)[4/5] Running database migrations...$(NC)"
 	@sleep 5
 	@$(MAKE) migrate-up --no-print-directory
+	@echo ""
+	@echo "$(GREEN)[5/5] Building service...$(NC)"
+	@$(MAKE) build --no-print-directory
 	@echo ""
 	@echo "$(GREEN)============================================$(NC)"
 	@echo "$(GREEN)  Setup complete!$(NC)"
@@ -209,29 +257,42 @@ help:
 	@echo "$(GREEN)============================================$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Quick Start:$(NC)"
-	@echo "  1. make setup    - First-time setup"
+	@echo "  1. make setup    - First-time setup (tools + deps + docker + migrate + build)"
 	@echo "  2. make run      - Start the service"
 	@echo "  3. curl http://localhost:8081/health/live"
 	@echo ""
 	@echo "$(YELLOW)Build & Run:$(NC)"
 	@echo "  make build         - Build binary"
 	@echo "  make run           - Run application"
-	@echo "  make run-dev       - Run with hot reload"
+	@echo "  make run-dev       - Run with hot reload (requires air)"
 	@echo ""
-	@echo "$(YELLOW)Testing:$(NC)"
-	@echo "  make test          - Run all tests"
+	@echo "$(YELLOW)Testing & Quality:$(NC)"
+	@echo "  make test          - Run all tests (verbose, race detector)"
 	@echo "  make test-short    - Quick test run"
-	@echo "  make test-coverage - Tests with coverage"
+	@echo "  make test-coverage - Tests with coverage report"
+	@echo "  make lint          - Run golangci-lint"
+	@echo "  make vet           - Run go vet"
+	@echo "  make check         - Run vet + lint + test"
+	@echo "  make fmt           - Format code (gofmt + goimports)"
 	@echo ""
 	@echo "$(YELLOW)Docker:$(NC)"
-	@echo "  make docker-up     - Start Postgres+Redis+Kafka"
+	@echo "  make docker-up     - Start Postgres + Redis + Kafka"
 	@echo "  make docker-down   - Stop containers"
 	@echo "  make docker-clean  - Stop + remove volumes"
+	@echo "  make docker-build  - Build Docker image"
+	@echo "  make docker-run    - Run Docker container"
 	@echo ""
 	@echo "$(YELLOW)Database:$(NC)"
 	@echo "  make migrate-up       - Run migrations"
 	@echo "  make migrate-down     - Rollback all"
+	@echo "  make migrate-down-one - Rollback one"
 	@echo "  make migrate-create   - New migration"
+	@echo "  make migrate-version  - Current version"
+	@echo "  make migrate-force    - Force migration version"
+	@echo ""
+	@echo "$(YELLOW)Tracing:$(NC)"
+	@echo "  make trace-up      - Start Jaeger (UI: http://localhost:16686)"
+	@echo "  make trace-down    - Stop Jaeger"
 	@echo ""
 	@echo "$(YELLOW)Mocks:$(NC)"
 	@echo "  make mock          - Generate mocks"

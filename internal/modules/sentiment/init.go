@@ -1,12 +1,12 @@
 package sentiment
 
 import (
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/call-notes-ai-service/pkg/database"
 )
 
 var sentModule IModule
 
-var NewModule = func(pool *pgxpool.Pool) IModule {
+var NewModule = func(pool database.IPool) IModule {
 	if sentModule == nil {
 		repo := NewRepository(pool)
 		core := NewCore(repo)
@@ -15,11 +15,13 @@ var NewModule = func(pool *pgxpool.Pool) IModule {
 	return sentModule
 }
 
+// IModule defines the sentiment module interface
 type IModule interface {
 	GetCore() ICore
 	GetRepository() IRepository
 }
 
+// Module implements IModule
 type Module struct {
 	Core ICore
 	Repo IRepository

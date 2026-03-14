@@ -1,12 +1,12 @@
 package followup
 
 import (
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/call-notes-ai-service/pkg/database"
 )
 
 var fuModule IModule
 
-var NewModule = func(pool *pgxpool.Pool) IModule {
+var NewModule = func(pool database.IPool) IModule {
 	if fuModule == nil {
 		repo := NewRepository(pool)
 		core := NewCore(repo)
@@ -16,12 +16,14 @@ var NewModule = func(pool *pgxpool.Pool) IModule {
 	return fuModule
 }
 
+// IModule defines the follow-up module interface
 type IModule interface {
 	GetCore() ICore
 	GetHandler() *HTTPHandler
 	GetRepository() IRepository
 }
 
+// Module implements IModule
 type Module struct {
 	Core    ICore
 	Handler *HTTPHandler

@@ -1,12 +1,12 @@
 package analytics
 
 import (
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/call-notes-ai-service/pkg/database"
 )
 
 var analyticsModule IModule
 
-var NewModule = func(pool *pgxpool.Pool) IModule {
+var NewModule = func(pool database.IPool) IModule {
 	if analyticsModule == nil {
 		repo := NewRepository(pool)
 		core := NewCore(repo)
@@ -16,12 +16,14 @@ var NewModule = func(pool *pgxpool.Pool) IModule {
 	return analyticsModule
 }
 
+// IModule defines the analytics module interface
 type IModule interface {
 	GetCore() ICore
 	GetHandler() *HTTPHandler
 	GetRepository() IRepository
 }
 
+// Module implements IModule
 type Module struct {
 	Core    ICore
 	Handler *HTTPHandler

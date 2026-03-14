@@ -4,22 +4,25 @@ import (
 	"context"
 
 	"github.com/call-notes-ai-service/internal/modules/sentiment/entities"
+	"github.com/call-notes-ai-service/pkg/database"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// IRepository defines the data access interface for sentiment
 type IRepository interface {
 	CreateSentimentLog(ctx context.Context, log *entities.SentimentLog) error
 	GetSentimentLogs(ctx context.Context, sessionID uuid.UUID) ([]entities.SentimentLog, error)
 }
 
+// Repository implements IRepository using database.IPool
 type Repository struct {
-	pool *pgxpool.Pool
+	pool database.IPool
 }
 
 var _ IRepository = (*Repository)(nil)
 
-func NewRepository(pool *pgxpool.Pool) *Repository {
+// NewRepository creates a new sentiment repository
+func NewRepository(pool database.IPool) *Repository {
 	return &Repository{pool: pool}
 }
 

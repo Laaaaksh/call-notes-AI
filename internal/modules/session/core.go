@@ -5,6 +5,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/call-notes-ai-service/internal/constants"
@@ -61,7 +62,7 @@ func (c *Core) StartSession(ctx context.Context, req *entities.StartSessionReque
 		TalkdeskCallID: req.TalkdeskCallID,
 		AgentID:        req.AgentID,
 		PatientPhone:   phone,
-		Status:         constants.SessionStatusCreated,
+		Status:         constants.SessionStatusCreated.String(),
 		StartedAt:      time.Now().UTC(),
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
@@ -89,7 +90,7 @@ func (c *Core) StartSession(ctx context.Context, req *entities.StartSessionReque
 
 func (c *Core) EndSession(ctx context.Context, sessionID uuid.UUID) error {
 	now := time.Now().UTC()
-	return c.repo.UpdateSessionStatus(ctx, sessionID, constants.SessionStatusReviewing, &now)
+	return c.repo.UpdateSessionStatus(ctx, sessionID, constants.SessionStatusReviewing.String(), &now)
 }
 
 func (c *Core) GetSessionState(ctx context.Context, sessionID uuid.UUID) (*entities.SessionState, error) {
@@ -174,7 +175,7 @@ func (c *Core) ApplyAgentOverride(ctx context.Context, sessionID uuid.UUID, fiel
 		FieldName:  fieldName,
 		Value:      agentValue,
 		Confidence: 1.0,
-		Source:     constants.SourceAgentOverride,
+		Source:     constants.SourceAgentOverride.String(),
 	})
 }
 
@@ -186,7 +187,7 @@ func (c *Core) SubmitSession(ctx context.Context, sessionID uuid.UUID, req *enti
 	}
 
 	now := time.Now().UTC()
-	if err := c.repo.UpdateSessionStatus(ctx, sessionID, constants.SessionStatusSubmitted, &now); err != nil {
+	if err := c.repo.UpdateSessionStatus(ctx, sessionID, constants.SessionStatusSubmitted.String(), &now); err != nil {
 		return nil, err
 	}
 
@@ -197,29 +198,30 @@ func (c *Core) SubmitSession(ctx context.Context, sessionID uuid.UUID, req *enti
 
 	return &entities.SubmitResponse{
 		SessionID: sessionID.String(),
-		Status:    constants.SessionStatusSubmitted,
+		Status:    constants.SessionStatusSubmitted.String(),
 	}, nil
 }
 
 func (c *Core) PurgeSession(ctx context.Context, sessionID uuid.UUID) error {
 	if c.redisClient != nil {
+		sid := sessionID.String()
 		keys := []string{
-			"session:" + sessionID.String() + ":state",
-			"session:" + sessionID.String() + ":fields",
-			"session:" + sessionID.String() + ":transcript",
+			fmt.Sprintf(constants.RedisKeySessionState, sid),
+			fmt.Sprintf(constants.RedisKeySessionFields, sid),
+			fmt.Sprintf(constants.RedisKeySessionTranscript, sid),
 		}
 		c.redisClient.Del(ctx, keys...)
 	}
 
 	if err := c.repo.PurgeSession(ctx, sessionID); err != nil {
-		logger.Ctx(ctx).Errorw("Session purge failed",
+		logger.Ctx(ctx).Errorw(constants.LogMsgSessionPurgeFailed,
 			constants.LogKeyError, err,
 			constants.LogFieldSessionID, sessionID.String(),
 		)
 		return err
 	}
 
-	logger.Ctx(ctx).Infow("Session purged (DPDP right to erasure)",
+	logger.Ctx(ctx).Infow(constants.LogMsgSessionPurged,
 		constants.LogFieldSessionID, sessionID.String(),
 	)
 	return nil

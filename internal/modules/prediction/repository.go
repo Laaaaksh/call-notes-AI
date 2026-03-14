@@ -5,10 +5,11 @@ import (
 	"time"
 
 	"github.com/call-notes-ai-service/internal/modules/prediction/entities"
+	"github.com/call-notes-ai-service/pkg/database"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// IRepository defines the data access interface for prediction
 type IRepository interface {
 	GetPatientHistory(ctx context.Context, phone string) ([]entities.PatientHistoryEntry, error)
 	UpsertHistoryEntry(ctx context.Context, entry *entities.PatientHistoryEntry) error
@@ -16,13 +17,15 @@ type IRepository interface {
 	PurgePatientHistory(ctx context.Context, phone string) error
 }
 
+// Repository implements IRepository using database.IPool
 type Repository struct {
-	pool *pgxpool.Pool
+	pool database.IPool
 }
 
 var _ IRepository = (*Repository)(nil)
 
-func NewRepository(pool *pgxpool.Pool) *Repository {
+// NewRepository creates a new prediction repository
+func NewRepository(pool database.IPool) *Repository {
 	return &Repository{pool: pool}
 }
 

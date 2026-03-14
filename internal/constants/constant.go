@@ -2,8 +2,8 @@ package constants
 
 // Application environment
 const (
-	EnvKeyAppEnv   = "APP_ENV"
-	EnvDefaultDev  = "dev"
+	EnvKeyAppEnv  = "APP_ENV"
+	EnvDefaultDev = "dev"
 )
 
 // Server names
@@ -17,28 +17,9 @@ const (
 	APIVersionPrefix = "/v1"
 )
 
-// Route paths
+// Request timeout
 const (
-	RouteHealthLive  = "/health/live"
-	RouteHealthReady = "/health/ready"
-	RouteMetrics     = "/metrics"
-)
-
-// HTTP headers and content types
-const (
-	HeaderContentType = "Content-Type"
-	ContentTypeJSON   = "application/json"
-)
-
-// HTTP status codes
-const (
-	HTTPStatusOK                 = 200
-	HTTPStatusCreated            = 201
-	HTTPStatusBadRequest         = 400
-	HTTPStatusUnauthorized       = 401
-	HTTPStatusNotFound           = 404
-	HTTPStatusConflict           = 409
-	HTTPStatusServiceUnavailable = 503
+	DefaultRequestTimeoutSeconds = 30
 )
 
 // Health status
@@ -47,254 +28,15 @@ const (
 	StatusNotServing = "NOT_SERVING"
 )
 
-// Session statuses
+// Response field values
 const (
-	SessionStatusCreated    = "CREATED"
-	SessionStatusActive     = "ACTIVE"
-	SessionStatusInterrupted = "INTERRUPTED"
-	SessionStatusReviewing  = "REVIEWING"
-	SessionStatusSubmitted  = "SUBMITTED"
-	SessionStatusCompleted  = "COMPLETED"
-	SessionStatusErrored    = "ERRORED"
-)
-
-// Extraction sources
-const (
-	SourceRuleEngine   = "rule_engine"
-	SourceMedicalNER   = "medical_ner"
-	SourceLLM          = "llm"
-	SourceAgentOverride = "agent_override"
-	SourceHistory      = "history"
-)
-
-// Speaker labels
-const (
-	SpeakerPatient = "patient"
-	SpeakerAgent   = "agent"
-	SpeakerUnknown = "unknown"
-)
-
-// Confidence thresholds
-const (
-	ConfidenceHigh   = 0.90
-	ConfidenceMedium = 0.70
-	ConfidenceLow    = 0.50
-)
-
-// Logging
-const (
-	LogFormatJSON        = "json"
-	LogLevelDebug        = "debug"
-	LogLevelInfo         = "info"
-	LogLevelWarn         = "warn"
-	LogLevelError        = "error"
-	LogOutputStdout      = "stdout"
-	LogOutputStderr      = "stderr"
-	LogEncoderTimeKey    = "timestamp"
-	LogEncoderMessageKey = "msg"
-	LogEncoderLevelKey   = "level"
-	LogEncoderCallerKey  = "caller"
-)
-
-// Log field keys
-const (
-	LogKeyError          = "error"
-	LogKeyRequestID      = "request_id"
-	LogFieldName         = "name"
-	LogFieldEnv          = "env"
-	LogFieldPort         = "port"
-	LogFieldOpsPort      = "ops_port"
-	LogFieldAddr         = "addr"
-	LogFieldTraceID      = "trace_id"
-	LogFieldSpanID       = "span_id"
-	LogFieldSessionID    = "session_id"
-	LogFieldAgentID      = "agent_id"
-	LogFieldCallID       = "call_id"
-	LogFieldFieldName    = "field_name"
-	LogFieldConfidence   = "confidence"
-	LogFieldSource       = "source"
-	LogFieldDelaySeconds = "delay_seconds"
-	LogFieldClientID     = "client_id"
-	LogFieldTrigger      = "trigger"
-	LogFieldAttempt      = "attempt"
-	LogFieldMaxRetries   = "max_retries"
-	LogFieldBackoff      = "backoff"
-	LogFieldHost         = "host"
-	LogFieldDatabase     = "database"
-	LogFieldMaxConns     = "max_connections"
-	LogFieldModel        = "model"
-	LogFieldLatencyMs    = "latency_ms"
-	LogFieldInstanceURL  = "instance_url"
-	LogFieldObject       = "object"
-	LogFieldExternalID   = "external_id"
-	LogFieldRecordID     = "record_id"
-	LogFieldSequence     = "sequence"
-	LogFieldIsFinal      = "is_final"
-	LogFieldSpeaker      = "speaker"
+	ResponseStatusUpdated = "updated"
+	ResponseStatusPurged  = "purged"
+	ResponseKeyError      = "error"
+	ResponseKeyStatus     = "status"
 )
 
 // LLM reasoning trigger values
 const (
 	TriggerAmbiguityOrCorrection = "ambiguity_or_correction"
-)
-
-// Log messages — boot and server lifecycle
-const (
-	LogMsgStartingService          = "Starting service"
-	LogMsgMainServerStarting       = "Main API server starting"
-	LogMsgOpsServerStarting        = "Ops server starting"
-	LogMsgMainServerFailed         = "Main server failed"
-	LogMsgOpsServerFailed          = "Ops server failed"
-	LogMsgShutdownSignalReceived   = "Shutdown signal received"
-	LogMsgServiceStopped           = "Service stopped"
-	LogMsgServiceMarkedUnhealthy   = "Service marked as unhealthy"
-	LogMsgWaitingForShutdownDelay  = "Waiting for connection drain"
-	LogMsgGracefulShutdownComplete = "Graceful shutdown complete"
-	LogMsgShutdownTimeoutExceeded  = "Shutdown timeout exceeded"
-	LogMsgMainServerShutdownErr    = "Main server shutdown error"
-	LogMsgOpsServerShutdownErr     = "Ops server shutdown error"
-	LogMsgMainServerShutdownDone   = "Main server shutdown complete"
-	LogMsgOpsServerShutdownDone    = "Ops server shutdown complete"
-	LogMsgTracerInitFailed         = "Tracer initialization failed"
-	LogMsgFailedToInitDB           = "Failed to initialize database"
-	LogMsgReadinessCheckFailed     = "Readiness check failed"
-	LogMsgFailedToEncodeResponse   = "Failed to encode response"
-)
-
-// Log messages — session
-const (
-	LogMsgSessionCreated       = "Call session created"
-	LogMsgSessionCreateFailed  = "Failed to create session"
-	LogMsgSessionGetFailed     = "Failed to get session"
-	LogMsgSessionEnded         = "Call session ended"
-	LogMsgFieldExtracted       = "Field extracted"
-	LogMsgFieldUpdated         = "Field updated"
-	LogMsgAgentOverride        = "Agent override applied"
-	LogMsgSalesforceSubmitted  = "Record submitted to Salesforce"
-)
-
-// Log messages — infrastructure
-const (
-	LogMsgRedisConnFailed      = "Redis connection failed, session caching disabled"
-	LogMsgRedisConnected       = "Redis connected"
-	LogMsgDBPoolInitialized    = "Database pool initialized"
-	LogMsgDBConnAttempt        = "Database connection attempt"
-	LogMsgDBConnected          = "Database connected"
-	LogMsgDBConnFailed         = "Database connection failed, retrying"
-	LogMsgDBPoolClosed         = "Database pool closed"
-)
-
-// Log messages — external services
-const (
-	LogMsgDeepgramConnected    = "Deepgram WebSocket connected"
-	LogMsgDeepgramDisconnected = "Deepgram WebSocket disconnected"
-	LogMsgDeepgramReadErr      = "Deepgram read error"
-	LogMsgLLMInvoked           = "LLM reasoning invoked"
-	LogMsgLLMComplete          = "LLM invocation complete"
-	LogMsgLLMReasonFailed      = "LLM reasoning failed, continuing with L1+L2"
-	LogMsgLLMConflictFailed    = "LLM conflict resolution failed"
-	LogMsgLLMSummaryFailed     = "LLM summary generation failed"
-	LogMsgSFAuthenticated      = "Salesforce authenticated"
-	LogMsgSFUpsertComplete     = "Salesforce upsert complete"
-	LogMsgSFUpsertFailed       = "Salesforce upsert failed"
-	LogMsgSFCaseUpserted       = "Salesforce case upserted"
-	LogMsgPIIRedacted          = "PII redacted from transcript"
-)
-
-// Log messages — WebSocket
-const (
-	LogMsgWSClientConnected    = "WebSocket client connected"
-	LogMsgWSClientDisconnected = "WebSocket client disconnected"
-)
-
-// Log messages — transcription
-const (
-	LogMsgTranscriptChunkProcessed = "Transcript chunk processed"
-)
-
-// Log field keys — futuristic modules
-const (
-	LogFieldPatientPhone   = "patient_phone"
-	LogFieldPredictedCount = "predicted_count"
-	LogFieldSessionCount   = "session_count"
-	LogFieldEmotionType    = "emotion_type"
-	LogFieldIntensity      = "intensity"
-	LogFieldUrgencyLevel   = "urgency_level"
-	LogFieldTriageScore    = "triage_score"
-	LogFieldFollowupType   = "followup_type"
-	LogFieldFollowupID     = "followup_id"
-	LogFieldFollowupStatus = "followup_status"
-	LogFieldDueDate        = "due_date"
-)
-
-// Log messages — prediction module
-const (
-	LogMsgPredictionLookupFailed = "Patient history lookup failed"
-	LogMsgPredictionComplete     = "Predictive pre-population complete"
-)
-
-// Log messages — sentiment module
-const (
-	LogMsgSentimentLogFailed       = "Failed to log sentiment"
-	LogMsgSentimentAlertTriggered  = "Sentiment alert triggered"
-)
-
-// Log messages — triage module
-const (
-	LogMsgTriageAssessmentFailed = "Triage assessment persistence failed"
-	LogMsgTriageUpdated          = "Triage assessment updated"
-)
-
-// Log messages — follow-up module
-const (
-	LogMsgFollowupDetected    = "Follow-up detected in transcript"
-	LogMsgFollowupCreateFailed = "Failed to create follow-up"
-	LogMsgFollowupConfirmed   = "Follow-up confirmed by agent"
-)
-
-// Log messages — analytics module
-const (
-	LogMsgAnalyticsQueryFailed = "Analytics query failed"
-)
-
-// Metrics
-const (
-	MetricRequestDuration   = "http_request_duration_seconds"
-	MetricRequestTotal      = "http_requests_total"
-	MetricActiveSessionsCount   = "active_sessions_count"
-	MetricFieldsExtracted       = "fields_extracted_total"
-	MetricFieldsOverridden      = "fields_overridden_total"
-	MetricSTTLatency            = "stt_latency_seconds"
-	MetricExtractionLatency     = "extraction_latency_seconds"
-	MetricEndToEndLatency       = "end_to_end_latency_seconds"
-	MetricLLMInvocations        = "llm_invocations_total"
-	MetricDeepgramErrors        = "deepgram_errors_total"
-	MetricSalesforceUpserts     = "salesforce_upserts_total"
-	MetricConfidenceAvg         = "field_confidence_average"
-	MetricDBConnectionsOpen = "db_connections_open"
-	MetricDBConnectionsIdle = "db_connections_idle"
-	LabelMethod             = "method"
-	LabelPath               = "path"
-	LabelStatusCode         = "status_code"
-	LabelFieldName          = "field_name"
-	LabelSource             = "source"
-	LabelReason             = "reason"
-)
-
-// HTTP error response messages
-const (
-	ErrMsgInvalidRequestBody = "invalid request body"
-	ErrMsgInvalidSessionID   = "invalid session ID"
-)
-
-// Response field values
-const (
-	ResponseStatusUpdated = "updated"
-	ResponseKeyError      = "error"
-	ResponseKeyStatus     = "status"
-)
-
-// Request timeout
-const (
-	DefaultRequestTimeoutSeconds = 30
 )

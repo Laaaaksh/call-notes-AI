@@ -26,10 +26,6 @@ func NewCore(db IDatabase) ICore {
 	return &Core{db: db, healthy: 1}
 }
 
-type HealthResponse struct {
-	Status string `json:"status"`
-}
-
 func (c *Core) RunLivenessCheck(ctx context.Context) (string, int) {
 	if !c.IsHealthy() {
 		return constants.StatusNotServing, constants.HTTPStatusServiceUnavailable

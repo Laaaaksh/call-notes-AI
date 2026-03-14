@@ -5,9 +5,10 @@ import (
 	"time"
 
 	"github.com/call-notes-ai-service/internal/modules/analytics/entities"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/call-notes-ai-service/pkg/database"
 )
 
+// IRepository defines the data access interface for analytics
 type IRepository interface {
 	GetCallCount(ctx context.Context, from, to time.Time) (int, error)
 	GetAvgCallDuration(ctx context.Context, from, to time.Time) (float64, error)
@@ -21,13 +22,15 @@ type IRepository interface {
 	GetSentimentTrend(ctx context.Context, from, to time.Time, granularity string) ([]entities.SentimentPoint, error)
 }
 
+// Repository implements IRepository using database.IPool
 type Repository struct {
-	pool *pgxpool.Pool
+	pool database.IPool
 }
 
 var _ IRepository = (*Repository)(nil)
 
-func NewRepository(pool *pgxpool.Pool) *Repository {
+// NewRepository creates a new analytics repository
+func NewRepository(pool database.IPool) *Repository {
 	return &Repository{pool: pool}
 }
 

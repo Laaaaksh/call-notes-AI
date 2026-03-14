@@ -1,12 +1,12 @@
 package triage
 
 import (
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/call-notes-ai-service/pkg/database"
 )
 
 var triageModule IModule
 
-var NewModule = func(pool *pgxpool.Pool) IModule {
+var NewModule = func(pool database.IPool) IModule {
 	if triageModule == nil {
 		repo := NewRepository(pool)
 		core := NewCore(repo)
@@ -16,12 +16,14 @@ var NewModule = func(pool *pgxpool.Pool) IModule {
 	return triageModule
 }
 
+// IModule defines the triage module interface
 type IModule interface {
 	GetCore() ICore
 	GetHandler() *HTTPHandler
 	GetRepository() IRepository
 }
 
+// Module implements IModule
 type Module struct {
 	Core    ICore
 	Handler *HTTPHandler

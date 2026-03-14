@@ -1,37 +1,41 @@
 package triage
 
 import (
-	"encoding/json"
 	"net/http"
 
-	"github.com/call-notes-ai-service/internal/constants"
 	"github.com/call-notes-ai-service/internal/modules/triage/entities"
+	"github.com/call-notes-ai-service/internal/utils"
+	"github.com/call-notes-ai-service/pkg/apperror"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
+// HTTPHandler handles triage HTTP requests
 type HTTPHandler struct {
 	core ICore
 }
 
+// NewHTTPHandler creates a new triage HTTP handler
 func NewHTTPHandler(core ICore) *HTTPHandler {
 	return &HTTPHandler{core: core}
 }
 
+// RegisterRoutes registers triage routes on the router
 func (h *HTTPHandler) RegisterRoutes(r chi.Router) {
 	r.Get(entities.RouteSessionTriage, h.GetTriage)
 }
 
+// GetTriage handles GET /sessions/{sessionID}/triage
 func (h *HTTPHandler) GetTriage(w http.ResponseWriter, r *http.Request) {
 	sessionID, err := uuid.Parse(chi.URLParam(r, "sessionID"))
 	if err != nil {
-		h.writeError(w, http.StatusBadRequest, constants.ErrMsgInvalidSessionID)
+		utils.WriteError(w, r, apperror.NewWithMessage(apperror.CodeBadRequest, err, apperror.MsgInvalidSessionID))
 		return
 	}
 
 	assessment, err := h.core.GetAssessment(r.Context(), sessionID)
 	if err != nil {
-		h.writeError(w, http.StatusNotFound, "triage assessment not found")
+		utils.WriteError(w, r, apperror.NewWithMessage(apperror.CodeNotFound, err, apperror.MsgTriageNotFound))
 		return
 	}
 
@@ -44,19 +48,5 @@ func (h *HTTPHandler) GetTriage(w http.ResponseWriter, r *http.Request) {
 		Modifiers:      assessment.ModifiersApplied,
 	}
 
-	h.writeJSON(w, http.StatusOK, resp)
-}
-
-func (h *HTTPHandler) writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
-	w.WriteHeader(status)
-	if data != nil {
-		_ = json.NewEncoder(w).Encode(data)
-	}
-}
-
-func (h *HTTPHandler) writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+	utils.WriteJSON(w, http.StatusOK, resp)
 }

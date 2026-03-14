@@ -6,13 +6,13 @@ import (
 	"context"
 	"time"
 
-	"github.com/call-notes-ai-service/internal/constants"
 	"github.com/call-notes-ai-service/internal/logger"
 	"github.com/call-notes-ai-service/internal/modules/session/entities"
+	"github.com/call-notes-ai-service/pkg/database"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// IRepository defines the data access interface for session management
 type IRepository interface {
 	CreateSession(ctx context.Context, session *entities.CallSession) error
 	GetSession(ctx context.Context, id uuid.UUID) (*entities.CallSession, error)
@@ -24,13 +24,15 @@ type IRepository interface {
 	PurgeSession(ctx context.Context, id uuid.UUID) error
 }
 
+// Repository implements IRepository using database.IPool
 type Repository struct {
-	pool *pgxpool.Pool
+	pool database.IPool
 }
 
 var _ IRepository = (*Repository)(nil)
 
-func NewRepository(pool *pgxpool.Pool) *Repository {
+// NewRepository creates a new session repository
+func NewRepository(pool database.IPool) *Repository {
 	return &Repository{pool: pool}
 }
 
@@ -78,7 +80,7 @@ func (r *Repository) CreateSession(ctx context.Context, session *entities.CallSe
 		session.Status, session.ParentSessionID, session.StartedAt, session.CreatedAt, session.UpdatedAt,
 	)
 	if err != nil {
-		logger.Ctx(ctx).Errorw("Failed to create session", constants.LogKeyError, err)
+		logger.Ctx(ctx).Errorw("Failed to create session", "error", err)
 	}
 	return err
 }

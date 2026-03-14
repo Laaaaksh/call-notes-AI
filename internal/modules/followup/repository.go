@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"github.com/call-notes-ai-service/internal/modules/followup/entities"
+	"github.com/call-notes-ai-service/pkg/database"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// IRepository defines the data access interface for follow-ups
 type IRepository interface {
 	CreateFollowUp(ctx context.Context, fu *entities.FollowUp) error
 	GetFollowUps(ctx context.Context, sessionID uuid.UUID) ([]entities.FollowUp, error)
@@ -15,13 +16,15 @@ type IRepository interface {
 	UpdateFollowUpStatus(ctx context.Context, id uuid.UUID, status entities.FollowUpStatus, confirmedBy *string) error
 }
 
+// Repository implements IRepository using database.IPool
 type Repository struct {
-	pool *pgxpool.Pool
+	pool database.IPool
 }
 
 var _ IRepository = (*Repository)(nil)
 
-func NewRepository(pool *pgxpool.Pool) *Repository {
+// NewRepository creates a new follow-up repository
+func NewRepository(pool database.IPool) *Repository {
 	return &Repository{pool: pool}
 }
 

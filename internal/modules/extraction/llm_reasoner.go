@@ -72,7 +72,7 @@ func (r *LLMReasoner) Reason(ctx context.Context, segment *entities.TranscriptSe
 	var grounded []entities.MedicalEntity
 	for _, e := range parsedEntities {
 		if isGroundedInTranscript(e, segment.Text) {
-			e.SourceLayer = constants.SourceLLM
+			e.SourceLayer = constants.SourceLLM.String()
 			e.TranscriptRef = segment.Text
 			grounded = append(grounded, e)
 		}

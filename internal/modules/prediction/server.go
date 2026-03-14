@@ -1,52 +1,42 @@
 package prediction
 
 import (
-	"encoding/json"
 	"net/http"
 
-	"github.com/call-notes-ai-service/internal/constants"
 	"github.com/call-notes-ai-service/internal/modules/prediction/entities"
+	"github.com/call-notes-ai-service/internal/utils"
+	"github.com/call-notes-ai-service/pkg/apperror"
 	"github.com/go-chi/chi/v5"
 )
 
+// HTTPHandler handles prediction HTTP requests
 type HTTPHandler struct {
 	core ICore
 }
 
+// NewHTTPHandler creates a new prediction HTTP handler
 func NewHTTPHandler(core ICore) *HTTPHandler {
 	return &HTTPHandler{core: core}
 }
 
+// RegisterRoutes registers prediction routes on the router
 func (h *HTTPHandler) RegisterRoutes(r chi.Router) {
 	r.Get(entities.RoutePatientHistory, h.GetPatientHistory)
 }
 
+// GetPatientHistory handles GET /patients/{phone}/history
 func (h *HTTPHandler) GetPatientHistory(w http.ResponseWriter, r *http.Request) {
 	phone := chi.URLParam(r, "phone")
 	if phone == "" {
-		h.writeError(w, http.StatusBadRequest, "phone number is required")
+		utils.WriteError(w, r, apperror.NewWithMessage(apperror.CodeBadRequest, nil, apperror.MsgPatientNotFound))
 		return
 	}
 
 	resp, err := h.core.GetPredictedFields(r.Context(), phone)
 	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, err.Error())
+		utils.WriteError(w, r, apperror.New(apperror.CodeInternalError, err))
 		return
 	}
 
-	h.writeJSON(w, http.StatusOK, resp)
-}
-
-func (h *HTTPHandler) writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
-	w.WriteHeader(status)
-	if data != nil {
-		_ = json.NewEncoder(w).Encode(data)
-	}
-}
-
-func (h *HTTPHandler) writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+	utils.WriteJSON(w, http.StatusOK, resp)
 }
