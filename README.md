@@ -483,8 +483,3 @@ The service continues without Redis — session caching is disabled but all othe
 ```bash
 docker ps | grep redis
 ```
-
-## Documentation
-
-- **Core Technical Spec**: `docs/call-notes-ai-tech-spec.md`
-- **Futuristic Scope Spec**: `docs/call-notes-ai-futuristic-scope.md`
