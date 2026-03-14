@@ -104,16 +104,84 @@ make run
 
 ## Verify It Works
 
+### Quick Smoke Test
+
 ```bash
-# Liveness check
 curl http://localhost:8081/health/live
 # → {"status":"SERVING"}
+```
 
-# Readiness check (verifies DB connection)
+### Run All API Tests (Automated)
+
+A script tests all 20 endpoints automatically — creates a session, updates fields, submits, tests error handling, hits all futuristic APIs, and purges:
+
+```bash
+./scripts/test-apis.sh
+```
+
+Expected output:
+
+```
+═══════════════════════════════════════════════════
+  Call Notes AI Service — API Test Suite
+═══════════════════════════════════════════════════
+
+[1/6] Health & Ops
+  ✓ GET /health/live (HTTP 200)
+  ✓ GET /health/ready (HTTP 200)
+  ✓ GET /metrics (HTTP 200)
+
+[2/6] Session — Create
+  ✓ POST /v1/sessions (HTTP 201)
+
+[3/6] Session — CRUD
+  ✓ GET /v1/sessions/{id} (HTTP 200)
+  ✓ PATCH /v1/sessions/{id}/fields (HTTP 200)
+  ✓ POST /v1/sessions/{id}/submit (HTTP 200)
+
+[4/6] Session — Error Handling
+  ✓ GET /v1/sessions/not-a-uuid → 400
+  ✓ GET /v1/sessions/{non-existent} → 404
+  ✓ POST /v1/sessions (empty body) → 400
+
+[5/6] Futuristic APIs
+  ✓ GET /v1/patients/{phone}/history (HTTP 200)
+  ✓ GET /v1/sessions/{id}/triage → 404
+  ✓ GET /v1/sessions/{id}/followups (HTTP 200)
+  ✓ GET /v1/analytics/overview (HTTP 200)
+  ...
+
+[6/6] Session — Purge
+  ✓ DELETE /v1/sessions/{id}/purge (HTTP 200)
+  ✓ GET /v1/sessions/{id} after purge → 404
+
+═══════════════════════════════════════════════════
+  All 20 tests passed
+═══════════════════════════════════════════════════
+```
+
+### Manual cURL Examples
+
+<details>
+<summary>Click to expand all cURL commands</summary>
+
+#### Health & Ops
+
+```bash
+# Liveness
+curl http://localhost:8081/health/live
+
+# Readiness (checks DB)
 curl http://localhost:8081/health/ready
-# → {"status":"SERVING"}
 
-# Create a call session
+# Prometheus metrics
+curl http://localhost:8081/metrics
+```
+
+#### Session Lifecycle
+
+```bash
+# Create a session
 curl -X POST http://localhost:8080/v1/sessions \
   -H "Content-Type: application/json" \
   -d '{
@@ -126,24 +194,79 @@ curl -X POST http://localhost:8080/v1/sessions \
 # Get session state
 curl http://localhost:8080/v1/sessions/<session_id>
 
-# Update fields (agent override)
+# Update fields (agent overrides)
 curl -X PATCH http://localhost:8080/v1/sessions/<session_id>/fields \
   -H "Content-Type: application/json" \
   -d '{
     "overrides": [
       {"field_name": "patient_name", "value": "Rajesh Kumar"},
-      {"field_name": "primary_symptom", "value": "knee pain"}
+      {"field_name": "primary_symptom", "value": "knee pain"},
+      {"field_name": "body_part", "value": "right knee"},
+      {"field_name": "duration", "value": "2 weeks"},
+      {"field_name": "severity", "value": "7/10"}
     ]
   }'
 
-# Submit session
+# Submit session (with optional last-minute overrides)
 curl -X POST http://localhost:8080/v1/sessions/<session_id>/submit \
   -H "Content-Type: application/json" \
-  -d '{"overrides": []}'
+  -d '{
+    "overrides": [
+      {"field_name": "medication", "value": "Paracetamol 500mg"}
+    ]
+  }'
 
-# Prometheus metrics
-curl http://localhost:8081/metrics
+# Purge session (DPDP right-to-erasure)
+curl -X DELETE http://localhost:8080/v1/sessions/<session_id>/purge
 ```
+
+#### Predictive Pre-population
+
+```bash
+# Patient history — returns predicted fields for returning patients
+curl http://localhost:8080/v1/patients/+919876543210/history
+```
+
+#### Triage
+
+```bash
+# Get triage assessment for a session
+curl http://localhost:8080/v1/sessions/<session_id>/triage
+```
+
+#### Follow-ups
+
+```bash
+# List detected follow-ups
+curl http://localhost:8080/v1/sessions/<session_id>/followups
+
+# Confirm or dismiss a follow-up
+curl -X POST http://localhost:8080/v1/sessions/<session_id>/followups/confirm \
+  -H "Content-Type: application/json" \
+  -d '{
+    "followup_id": "<followup_uuid>",
+    "confirmed": true,
+    "agent_id": "agent-ramesh"
+  }'
+```
+
+#### Analytics
+
+```bash
+# Dashboard overview
+curl "http://localhost:8080/v1/analytics/overview?from=2026-03-01&to=2026-03-14"
+
+# Top conditions
+curl "http://localhost:8080/v1/analytics/conditions?from=2026-03-01&to=2026-03-14&limit=10"
+
+# Agent performance
+curl "http://localhost:8080/v1/analytics/agents/agent-ramesh/performance?from=2026-03-01&to=2026-03-14"
+
+# Sentiment trends
+curl "http://localhost:8080/v1/analytics/sentiment?from=2026-03-01&to=2026-03-14&granularity=daily"
+```
+
+</details>
 
 ## API Reference
 
