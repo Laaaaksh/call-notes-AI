@@ -1,11 +1,13 @@
 package utils
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 var phonePattern = regexp.MustCompile(`^\+?[1-9]\d{6,14}$`)
@@ -31,6 +33,11 @@ func ParseDate(s string) (time.Time, error) {
 // ParseDateTime parses a datetime string in RFC3339 format
 func ParseDateTime(s string) (time.Time, error) {
 	return time.Parse(time.RFC3339, s)
+}
+
+// IsNotFoundErr returns true if the error is a pgx "no rows" error
+func IsNotFoundErr(err error) bool {
+	return errors.Is(err, pgx.ErrNoRows)
 }
 
 // SanitizeString trims whitespace and limits length

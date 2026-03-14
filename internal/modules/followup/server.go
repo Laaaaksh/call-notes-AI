@@ -57,6 +57,10 @@ func (h *HTTPHandler) ConfirmFollowUp(w http.ResponseWriter, r *http.Request) {
 
 	fu, err := h.core.ConfirmFollowUp(r.Context(), &req)
 	if err != nil {
+		if utils.IsNotFoundErr(err) {
+			utils.WriteError(w, r, apperror.NewWithMessage(apperror.CodeNotFound, err, "Follow-up not found."))
+			return
+		}
 		utils.WriteError(w, r, apperror.New(apperror.CodeInternalError, err))
 		return
 	}
